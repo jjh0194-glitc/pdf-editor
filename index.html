@@ -149,7 +149,7 @@
     <header>
         <h1>Document Workspace</h1>
         <button class="btn btn-primary" id="exportBtn" style="display: none;">
-            <svg width="16" height="16" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            <svg width="16" height="16" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
             병합 및 저장
         </button>
     </header>
@@ -180,13 +180,21 @@
 
         for (const file of files) {
             const arrayBuffer = await file.arrayBuffer();
-            const pdfDoc = await pdfjsLib.getDocument(arrayBuffer).promise;
-            const docId = documentData.length;
-            documentData.push({ bytes: arrayBuffer, pdfLibDoc: null });
+            // 데이터 참조 충돌 방지를 위한 버퍼 복제
+            const bufferCopy = arrayBuffer.slice(0);
+            
+            try {
+                const pdfDoc = await pdfjsLib.getDocument(arrayBuffer).promise;
+                const docId = documentData.length;
+                documentData.push({ bytes: bufferCopy, pdfLibDoc: null });
 
-            for (let i = 1; i <= pdfDoc.numPages; i++) {
-                const page = await pdfDoc.getPage(i);
-                await renderPageCard(page, docId, i - 1);
+                for (let i = 1; i <= pdfDoc.numPages; i++) {
+                    const page = await pdfDoc.getPage(i);
+                    await renderPageCard(page, docId, i - 1);
+                }
+            } catch (err) {
+                alert(`파일을 읽는 중 오류가 발생했습니다: ${file.name}\n(암호가 걸려있거나 손상된 PDF일 수 있습니다.)`);
+                console.error(err);
             }
         }
         exportBtn.style.display = 'inline-flex';
@@ -234,40 +242,57 @@
     }
 
     exportBtn.addEventListener('click', async () => {
+        const cards = Array.from(pageGrid.querySelectorAll('.page-card'));
+        
+        // 예외 1: 병합할 페이지가 없는 경우 방어
+        if (cards.length === 0) {
+            alert('병합할 PDF 페이지가 존재하지 않습니다.');
+            return;
+        }
+
         exportBtn.innerHTML = '처리 중...';
         exportBtn.disabled = true;
 
-        const { PDFDocument, degrees } = PDFLib;
-        const mergedPdf = await PDFDocument.create();
-        const cards = Array.from(pageGrid.querySelectorAll('.page-card'));
-        
-        for (const card of cards) {
-            const docId = parseInt(card.dataset.docId);
-            const pageIndex = parseInt(card.dataset.pageIndex);
-            const rotation = parseInt(card.dataset.rotation);
+        try {
+            const { PDFDocument, degrees } = PDFLib;
+            const mergedPdf = await PDFDocument.create();
+            
+            for (const card of cards) {
+                const docId = parseInt(card.dataset.docId);
+                const pageIndex = parseInt(card.dataset.pageIndex);
+                const rotation = parseInt(card.dataset.rotation);
 
-            if (!documentData[docId].pdfLibDoc) {
-                documentData[docId].pdfLibDoc = await PDFDocument.load(documentData[docId].bytes);
+                if (!documentData[docId].pdfLibDoc) {
+                    documentData[docId].pdfLibDoc = await PDFDocument.load(documentData[docId].bytes);
+                }
+
+                const sourcePdf = documentData[docId].pdfLibDoc;
+                const [copiedPage] = await mergedPdf.copyPages(sourcePdf, [pageIndex]);
+                const currentRotation = copiedPage.getRotation().angle;
+                copiedPage.setRotation(degrees(currentRotation + rotation));
+                mergedPdf.addPage(copiedPage);
             }
 
-            const sourcePdf = documentData[docId].pdfLibDoc;
-            const [copiedPage] = await mergedPdf.copyPages(sourcePdf, [pageIndex]);
-            const currentRotation = copiedPage.getRotation().angle;
-            copiedPage.setRotation(degrees(currentRotation + rotation));
-            mergedPdf.addPage(copiedPage);
+            const pdfBytes = await mergedPdf.save();
+            const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'merged_document.pdf';
+            a.click();
+            URL.revokeObjectURL(url);
+
+        } catch (error) {
+            console.error(error);
+            alert('PDF 병합 처리 중 오류가 발생했습니다.\n보안(암호)이 설정된 문서이거나 지원되지 않는 형식일 수 있습니다.\n상세 에러: ' + error.message);
+        } finally {
+            // 에러가 발생하더라도 버튼을 원래 상태로 복구
+            exportBtn.innerHTML = `
+                <svg width="16" height="16" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                병합 및 저장
+            `;
+            exportBtn.disabled = false;
         }
-
-        const pdfBytes = await mergedPdf.save();
-        const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'merged_document.pdf';
-        a.click();
-        URL.revokeObjectURL(url);
-
-        exportBtn.innerHTML = '병합 및 저장';
-        exportBtn.disabled = false;
     });
 </script>
 </body>
