@@ -167,6 +167,7 @@
     const pageGrid = document.getElementById('page-grid');
     const exportBtn = document.getElementById('exportBtn');
     
+    // 메모리 최적화: 파일 객체의 참조값만 보관
     let documentData = []; 
 
     new Sortable(pageGrid, {
@@ -179,21 +180,21 @@
         if (files.length === 0) return;
 
         for (const file of files) {
-            const arrayBuffer = await file.arrayBuffer();
-            // 데이터 참조 충돌 방지를 위한 버퍼 복제
-            const bufferCopy = arrayBuffer.slice(0);
-            
             try {
+                // UI 렌더링을 위해서만 ArrayBuffer 사용
+                const arrayBuffer = await file.arrayBuffer();
                 const pdfDoc = await pdfjsLib.getDocument(arrayBuffer).promise;
+                
                 const docId = documentData.length;
-                documentData.push({ bytes: bufferCopy, pdfLibDoc: null });
+                // 메모리 절약을 위해 무거운 바이트 배열 대신 file 객체 자체를 저장
+                documentData.push({ file: file, pdfLibDoc: null }); 
 
                 for (let i = 1; i <= pdfDoc.numPages; i++) {
                     const page = await pdfDoc.getPage(i);
                     await renderPageCard(page, docId, i - 1);
                 }
             } catch (err) {
-                alert(`파일을 읽는 중 오류가 발생했습니다: ${file.name}\n(암호가 걸려있거나 손상된 PDF일 수 있습니다.)`);
+                alert(`파일을 읽는 중 오류가 발생했습니다: ${file.name}`);
                 console.error(err);
             }
         }
@@ -244,14 +245,17 @@
     exportBtn.addEventListener('click', async () => {
         const cards = Array.from(pageGrid.querySelectorAll('.page-card'));
         
-        // 예외 1: 병합할 페이지가 없는 경우 방어
         if (cards.length === 0) {
             alert('병합할 PDF 페이지가 존재하지 않습니다.');
             return;
         }
 
-        exportBtn.innerHTML = '처리 중...';
+        // 사용자 피드백 즉각 제공 (화면 멈춤 현상 완화)
+        exportBtn.innerHTML = '처리 중... (대용량 파일은 잠시 멈춘 것처럼 보일 수 있습니다)';
         exportBtn.disabled = true;
+
+        // 브라우저가 화면의 버튼 텍스트를 변경할 수 있도록 메인 스레드에 0.1초 휴식 제공
+        await new Promise(resolve => setTimeout(resolve, 100));
 
         try {
             const { PDFDocument, degrees } = PDFLib;
@@ -262,8 +266,10 @@
                 const pageIndex = parseInt(card.dataset.pageIndex);
                 const rotation = parseInt(card.dataset.rotation);
 
+                // 필요한 순간에만 파일에서 원본 데이터를 읽어옴
                 if (!documentData[docId].pdfLibDoc) {
-                    documentData[docId].pdfLibDoc = await PDFDocument.load(documentData[docId].bytes);
+                    const fileBuffer = await documentData[docId].file.arrayBuffer();
+                    documentData[docId].pdfLibDoc = await PDFDocument.load(fileBuffer, { ignoreEncryption: true });
                 }
 
                 const sourcePdf = documentData[docId].pdfLibDoc;
@@ -284,9 +290,13 @@
 
         } catch (error) {
             console.error(error);
-            alert('PDF 병합 처리 중 오류가 발생했습니다.\n보안(암호)이 설정된 문서이거나 지원되지 않는 형식일 수 있습니다.\n상세 에러: ' + error.message);
+            alert('PDF 병합 처리 중 오류가 발생했습니다.\n상세 에러: ' + error.message);
         } finally {
-            // 에러가 발생하더라도 버튼을 원래 상태로 복구
+            // 처리 완료 후 점유한 메모리 강제 해제 (가비지 컬렉션 유도)
+            for (let data of documentData) {
+                data.pdfLibDoc = null;
+            }
+            
             exportBtn.innerHTML = `
                 <svg width="16" height="16" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                 병합 및 저장
