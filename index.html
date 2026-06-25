@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Document Workspace</title>
+    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.8/dist/web/static/pretendard.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+    
+    <style>
+        :root {
+            --bg-color: #F9FAFB;
+            --surface-color: #FFFFFF;
+            --text-primary: #111827;
+            --text-secondary: #6B7280;
+            --border-color: #E5E7EB;
+            --accent-color: #2563EB;
+            --danger-color: #EF4444;
+        }
+
+        body {
+            font-family: 'Pretendard', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            margin: 0;
+            padding: 40px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 40px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        h1 {
+            font-size: 24px;
+            font-weight: 600;
+            margin: 0;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            border: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background-color: var(--text-primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background-color: #000000;
+        }
+
+        .upload-zone {
+            border: 1px dashed #D1D5DB;
+            border-radius: 12px;
+            padding: 60px 20px;
+            text-align: center;
+            background-color: var(--surface-color);
+            cursor: pointer;
+            margin-bottom: 40px;
+            display: block;
+        }
+
+        .upload-zone:hover {
+            border-color: var(--accent-color);
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        #page-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 32px;
+        }
+
+        .page-card {
+            background: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+            cursor: grab;
+            position: relative;
+        }
+
+        canvas {
+            width: 100%;
+            height: auto;
+            display: block;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .card-toolbar {
+            display: flex;
+            justify-content: space-around;
+            padding: 12px;
+        }
+
+        .icon-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: var(--text-secondary);
+            padding: 6px;
+        }
+
+        .icon-btn:hover {
+            color: var(--text-primary);
+        }
+
+        .icon-btn.delete:hover {
+            color: var(--danger-color);
+        }
+
+        .icon-btn svg {
+            width: 18px;
+            height: 18px;
+            stroke-width: 1.5;
+            stroke: currentColor;
+            fill: none;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>Document Workspace</h1>
+        <button class="btn btn-primary" id="exportBtn" style="display: none;">
+            <svg width="16" height="16" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            병합 및 저장
+        </button>
+    </header>
+
+    <label class="upload-zone" id="dropZone">
+        <p>클릭하여 PDF 파일을 추가하거나 이 곳으로 드래그하세요.</p>
+        <input type="file" id="fileInput" accept="application/pdf" multiple>
+    </label>
+
+    <div id="page-grid"></div>
+</div>
+
+<script>
+    const fileInput = document.getElementById('fileInput');
+    const pageGrid = document.getElementById('page-grid');
+    const exportBtn = document.getElementById('exportBtn');
+    
+    let documentData = []; 
+
+    new Sortable(pageGrid, {
+        animation: 150,
+        ghostClass: 'sortable-ghost'
+    });
+
+    fileInput.addEventListener('change', async (e) => {
+        const files = Array.from(e.target.files);
+        if (files.length === 0) return;
+
+        for (const file of files) {
+            const arrayBuffer = await file.arrayBuffer();
+            const pdfDoc = await pdfjsLib.getDocument(arrayBuffer).promise;
+            const docId = documentData.length;
+            documentData.push({ bytes: arrayBuffer, pdfLibDoc: null });
+
+            for (let i = 1; i <= pdfDoc.numPages; i++) {
+                const page = await pdfDoc.getPage(i);
+                await renderPageCard(page, docId, i - 1);
+            }
+        }
+        exportBtn.style.display = 'inline-flex';
+        fileInput.value = ''; 
+    });
+
+    async function renderPageCard(page, docId, pageIndex) {
+        const viewport = page.getViewport({ scale: 1.0 });
+        const card = document.createElement('div');
+        card.className = 'page-card';
+        card.dataset.docId = docId;
+        card.dataset.pageIndex = pageIndex;
+        card.dataset.rotation = 0;
+
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        await page.render({ canvasContext: context, viewport }).promise;
+
+        const toolbar = document.createElement('div');
+        toolbar.className = 'card-toolbar';
+        toolbar.innerHTML = `
+            <button class="icon-btn rotate" title="회전"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg></button>
+            <button class="icon-btn delete" title="삭제"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
+        `;
+
+        toolbar.querySelector('.rotate').addEventListener('click', () => {
+            let currentRot = parseInt(card.dataset.rotation);
+            currentRot = (currentRot + 90) % 360;
+            card.dataset.rotation = currentRot;
+            canvas.style.transform = `rotate(${currentRot}deg)`;
+            if (currentRot === 90 || currentRot === 270) {
+                canvas.style.margin = `${(canvas.width - canvas.height) / 2}px 0`;
+            } else {
+                canvas.style.margin = '0';
+            }
+        });
+
+        toolbar.querySelector('.delete').addEventListener('click', () => card.remove());
+
+        card.appendChild(canvas);
+        card.appendChild(toolbar);
+        pageGrid.appendChild(card);
+    }
+
+    exportBtn.addEventListener('click', async () => {
+        exportBtn.innerHTML = '처리 중...';
+        exportBtn.disabled = true;
+
+        const { PDFDocument, degrees } = PDFLib;
+        const mergedPdf = await PDFDocument.create();
+        const cards = Array.from(pageGrid.querySelectorAll('.page-card'));
+        
+        for (const card of cards) {
+            const docId = parseInt(card.dataset.docId);
+            const pageIndex = parseInt(card.dataset.pageIndex);
+            const rotation = parseInt(card.dataset.rotation);
+
+            if (!documentData[docId].pdfLibDoc) {
+                documentData[docId].pdfLibDoc = await PDFDocument.load(documentData[docId].bytes);
+            }
+
+            const sourcePdf = documentData[docId].pdfLibDoc;
+            const [copiedPage] = await mergedPdf.copyPages(sourcePdf, [pageIndex]);
+            const currentRotation = copiedPage.getRotation().angle;
+            copiedPage.setRotation(degrees(currentRotation + rotation));
+            mergedPdf.addPage(copiedPage);
+        }
+
+        const pdfBytes = await mergedPdf.save();
+        const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'merged_document.pdf';
+        a.click();
+        URL.revokeObjectURL(url);
+
+        exportBtn.innerHTML = '병합 및 저장';
+        exportBtn.disabled = false;
+    });
+</script>
+</body>
+</html>
