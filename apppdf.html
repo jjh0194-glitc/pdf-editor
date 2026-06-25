@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Workspace</title>
+    <!-- 전문 서체: Pretendard -->
+    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.8/dist/web/static/pretendard.css" />
+    <!-- 라이브러리: PDF.js (렌더링), PDF-lib (편집), SortableJS (드래그앤드롭) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+    
+    <style>
+        /* [UX 디자인 철학] 절제된 색상과 넉넉한 여백 */
+        :root {
+            --bg-color: #F9FAFB;
+            --surface-color: #FFFFFF;
+            --text-primary: #111827;
+            --text-secondary: #6B7280;
+            --border-color: #E5E7EB;
+            --accent-color: #2563EB;
+            --accent-hover: #1D4ED8;
+            --danger-color: #EF4444;
+        }
+
+        body {
+            font-family: 'Pretendard', -apple-system, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            margin: 0;
+            padding: 40px;
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        /* 헤더 영역 */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 40px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        h1 {
+            font-size: 24px;
+            font-weight: 600;
+            margin: 0;
+            letter-spacing: -0.02em;
+        }
+
+        /* 버튼 컴포넌트 */
+        .btn {
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background-color: var(--text-primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background-color: #000000;
+            transform: translateY(-1px);
+        }
+
+        /* 파일 업로드 영역 */
+        .upload-zone {
+            border: 1px dashed #D1D5DB;
+            border-radius: 12px;
+            padding: 60px 20px;
+            text-align: center;
+            background-color: var(--surface-color);
+            cursor: pointer;
+            transition: border-color 0.2s ease;
+            margin-bottom: 40px;
+        }
+
+        .upload-zone:hover {
+            border-color: var(--accent-color);
+        }
+
+        .upload-zone svg {
+            width: 32px;
+            height: 32px;
+            color: var(--text-secondary);
+            margin-bottom: 16px;
+        }
+
+        .upload-zone p {
+            margin: 0;
+            color: var(--text-secondary);
+            font-size: 15px;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        /* 페이지 그리드 (여백 강조) */
+        #page-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 32px;
+            margin-bottom: 60px;
+        }
+
+        /* 개별 페이지 카드 */
+        .page-card {
+            background: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            cursor: grab;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .page-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+
+        .page-card.sortable-ghost {
+            opacity: 0.4;
+        }
+
+        canvas {
+            width: 100%;
+            height: auto;
+            display: block;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        /* 카드 툴바 (라인 아이콘) */
+        .card-toolbar {
+            display: flex;
+            justify-content: space-around;
+            padding: 12px;
+            background-color: var(--surface-color);
+        }
+
+        .icon-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: var(--text-secondary);
+            padding: 6px;
+            border-radius: 4px;
+            transition: color 0.2s ease, background-color 0.2s ease;
+        }
+
+        .icon-btn:hover {
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+        }
+
+        .icon-btn.delete:hover {
+            color: var(--danger-color);
+            background-color: #FEF2F2;
+        }
+
+        .icon-btn svg {
+            width: 18px;
+            height: 18px;
+            stroke-width: 1.5;
+            stroke: currentColor;
+            fill: none;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>Document Workspace</h1>
+        <button class="btn btn-primary" id="exportBtn" style="display: none;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            병합 및 저장
+        </button>
+    </header>
+
+    <label class="upload-zone" id="dropZone">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 4v16m8-8H4"/></svg>
+        <p>클릭하여 PDF 파일을 추가하거나 이 곳으로 드래그하세요.</p>
+        <input type="file" id="fileInput" accept="application/pdf" multiple>
+    </label>
+
+    <div id="page-grid"></div>
+</div>
+
+<script>
+    const fileInput = document.getElementById('fileInput');
+    const pageGrid = document.getElementById('page-grid');
+    const exportBtn = document.getElementById('exportBtn');
+    
+    // 상태 관리: 로드된 문서 원본 데이터와 페이지 정보
+    let documentData = []; 
+    let pageCount = 0;
+
+    // 드래그 앤 드롭 정렬 (UX 최적화)
+    new Sortable(pageGrid, {
+        animation: 150,
+        ghostClass: 'sortable-ghost'
+    });
+
+    // 파일 로드 이벤트
+    fileInput.addEventListener('change', async (e) => {
+        const files = Array.from(e.target.files);
+        if (files.length === 0) return;
+
+        for (const file of files) {
+            const arrayBuffer = await file.arrayBuffer();
+            const pdfDoc = await pdfjsLib.getDocument(arrayBuffer).promise;
+            
+            // 원본 PDF Bytes 저장 (합칠 때 사용)
+            const docId = documentData.length;
+            documentData.push({ bytes: arrayBuffer, pdfLibDoc: null });
+
+            // 썸네일 생성 및 UI 렌더링
+            for (let i = 1; i <= pdfDoc.numPages; i++) {
+                const page = await pdfDoc.getPage(i);
+                await renderPageCard(page, docId, i - 1);
+            }
+        }
+        exportBtn.style.display = 'inline-flex';
+        fileInput.value = ''; // 동일 파일 재업로드 허용
+    });
+
+    // 페이지 카드 UI 생성 (캔버스 기반)
+    async function renderPageCard(page, docId, pageIndex) {
+        const scale = 1.0; 
+        const viewport = page.getViewport({ scale });
+        
+        const card = document.createElement('div');
+        card.className = 'page-card';
+        card.dataset.docId = docId;
+        card.dataset.pageIndex = pageIndex;
+        card.dataset.rotation = 0; // 초기 회전값
+
+        // 캔버스 렌더링
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        await page.render({ canvasContext: context, viewport }).promise;
+
+        // 하단 툴바 (회전 및 삭제 라인 아이콘)
+        const toolbar = document.createElement('div');
+        toolbar.className = 'card-toolbar';
+        toolbar.innerHTML = `
+            <button class="icon-btn rotate" title="90도 회전">
+                <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>
+            </button>
+            <button class="icon-btn delete" title="페이지 삭제">
+                <svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+            </button>
+        `;
+
+        // 회전 이벤트
+        toolbar.querySelector('.rotate').addEventListener('click', () => {
+            let currentRot = parseInt(card.dataset.rotation);
+            currentRot = (currentRot + 90) % 360;
+            card.dataset.rotation = currentRot;
+            canvas.style.transform = \`rotate(\${currentRot}deg)\`;
+            // 회전에 따른 카드 비율 보정
+            if (currentRot === 90 || currentRot === 270) {
+                canvas.style.margin = \`\${(canvas.width - canvas.height) / 2}px 0\`;
+            } else {
+                canvas.style.margin = '0';
+            }
+        });
+
+        // 삭제 이벤트
+        toolbar.querySelector('.delete').addEventListener('click', () => {
+            card.style.transform = 'scale(0.9)';
+            card.style.opacity = '0';
+            setTimeout(() => card.remove(), 200);
+        });
+
+        card.appendChild(canvas);
+        card.appendChild(toolbar);
+        pageGrid.appendChild(card);
+    }
+
+    // 최종 병합 및 저장 프로세스 (pdf-lib 사용)
+    exportBtn.addEventListener('click', async () => {
+        exportBtn.innerHTML = '처리 중...';
+        exportBtn.disabled = true;
+
+        const { PDFDocument, degrees } = PDFLib;
+        const mergedPdf = await PDFDocument.create();
+        
+        // 현재 DOM에 존재하는 카드들의 순서대로 처리
+        const cards = Array.from(pageGrid.querySelectorAll('.page-card'));
+        
+        for (const card of cards) {
+            const docId = parseInt(card.dataset.docId);
+            const pageIndex = parseInt(card.dataset.pageIndex);
+            const rotation = parseInt(card.dataset.rotation);
+
+            // 해당 문서가 아직 pdf-lib로 로드되지 않았다면 로드
+            if (!documentData[docId].pdfLibDoc) {
+                documentData[docId].pdfLibDoc = await PDFDocument.load(documentData[docId].bytes);
+            }
+
+            const sourcePdf = documentData[docId].pdfLibDoc;
+            const [copiedPage] = await mergedPdf.copyPages(sourcePdf, [pageIndex]);
+            
+            // 사용자가 적용한 회전값 추가
+            const currentRotation = copiedPage.getRotation().angle;
+            copiedPage.setRotation(degrees(currentRotation + rotation));
+            
+            mergedPdf.addPage(copiedPage);
+        }
+
+        // 브라우저 내에서 직접 다운로드 트리거
+        const pdfBytes = await mergedPdf.save();
+        const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'merged_document.pdf';
+        a.click();
+        URL.revokeObjectURL(url);
+
+        // 버튼 상태 복원
+        exportBtn.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            병합 및 저장
+        `;
+        exportBtn.disabled = false;
+    });
+</script>
+
+</body>
+</html>
